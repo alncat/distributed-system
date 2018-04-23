@@ -420,6 +420,7 @@ func (cfg *config) one(cmd int, expectedServers int) int {
 				nd, cmd1 := cfg.nCommitted(index)
 				if nd > 0 && nd >= expectedServers {
 					// committed
+					//fmt.Println("committed!!!!!!", cmd1, cmd)
 					if cmd2, ok := cmd1.(int); ok && cmd2 == cmd {
 						// and it was the command we submitted.
 						return index
