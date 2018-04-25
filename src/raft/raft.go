@@ -120,6 +120,7 @@ func (rf *Raft) persist() {
 	 e := gob.NewEncoder(w)
 	 e.Encode(rf.currentTerm)
 	 e.Encode(rf.votedFor)
+	 e.Encode(rf.commitIndex)
 	 e.Encode(rf.log)
 	 data := w.Bytes()
 	 rf.persister.SaveRaftState(data)
@@ -135,7 +136,9 @@ func (rf *Raft) readPersist(data []byte) {
 	d := gob.NewDecoder(r)
 	d.Decode(&rf.currentTerm)
 	d.Decode(&rf.votedFor)
+	d.Decode(&rf.commitIndex)
 	d.Decode(&rf.log)
+	//fmt.Println("readPersist", rf.me, rf.currentTerm, rf.commitIndex, rf.log)
 	if data == nil || len(data) < 1 { // bootstrap without any state?
 		return
 	}
@@ -177,18 +180,20 @@ func (rf *Raft) RequestVote(args *RequestVoteArgs, reply *RequestVoteReply) {
 		reply.Term = rf.currentTerm
 		reply.VoteGranted = false
 	} else{
+		rf.persist()
 		if args.Term > rf.currentTerm {
 			if(rf.state == 2){
+				fmt.Println(rf.me, "got request from", args.CandidateID, "in", rf.currentTerm)
 				rf.state = 0
 				rf.heartbeatTicker.Stop()
 				rf.indexCount = nil
 				rf.condition.Signal()
 				close(rf.Done)
-				//for i := range rf.commitQueue {
-				//	close(rf.commitQueue[i])
-				//}
+				//let sync single loop proceed and return
+				rf.mu.Unlock()
 				rf.wg.Wait()
-				fmt.Println(rf.me, "got request from", args.CandidateID, "in", rf.currentTerm)
+				//regain lock
+				rf.mu.Lock()
 			}
 			rf.state = 0
 			rf.votedFor = -1
@@ -230,8 +235,13 @@ func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply
 				rf.heartbeatTicker.Stop()
 				rf.indexCount = nil
 				rf.condition.Signal()
+				rf.state = 0
 				close(rf.Done)
+				//let sync single loop proceed and return
+				rf.mu.Unlock()
 				rf.wg.Wait()
+				//regain lock
+				rf.mu.Lock()
 			}
 			rf.state = 0
 			rf.currentTerm = args.Term
@@ -262,6 +272,7 @@ func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply
 					rf.commitIndex = args.LeaderCommit
 				}
 			}
+			rf.persist()
 			if oldIndex != rf.commitIndex {
 				fmt.Println(rf.me, "send", oldIndex+1, rf.commitIndex)
 				go func(from, to int){
@@ -329,9 +340,13 @@ func (rf *Raft) SyncSingle(id int){
 	rf.wg.Add(1)
 	defer rf.wg.Done()
 	for{
+		//fmt.Println(rf.me, id, "starts committing")
 		select {
-		case nextLog := <- rf.commitQueue[id] :
+		case nextLog := <- rf.commitQueue[id]:
 			toCommit := nextLog.Index
+			if toCommit <= rf.matchIndex[id] {
+				continue
+			}
 			rf.mu.Lock()
 			args := AppendEntriesArgs{
 				Term: rf.currentTerm,
@@ -345,7 +360,6 @@ func (rf *Raft) SyncSingle(id int){
 				Term: rf.currentTerm,
 				Success: false,
 			}
-			//fmt.Println(id, "starts committing", nextLog)
 			rf.mu.Unlock()
 			loop:
 			for {
@@ -367,6 +381,7 @@ func (rf *Raft) SyncSingle(id int){
 				args.PrevLogTerm = rf.log[rf.nextIndex[id] - 1].Term
 				args.Entries	  = []LogEntry{rf.log[rf.nextIndex[id]]}
 				args.LeaderCommit = rf.commitIndex
+				//fmt.Println(rf.me, "send", id, "new args", args, rf.nextIndex[id], len(rf.log), toCommit)
 				rf.mu.Unlock()
 
 				c := make(chan bool)
@@ -376,7 +391,6 @@ func (rf *Raft) SyncSingle(id int){
 					// use err and reply
 					if  success {
 						rf.mu.Lock()
-						//fmt.Println(rf.me, "send", id, "new args", args, rf.nextIndex[id], len(rf.log), toCommit)
 						if reply.Success {
 							rf.matchIndex[id] = rf.nextIndex[id]
 							rf.nextIndex[id]++
@@ -399,7 +413,7 @@ func (rf *Raft) SyncSingle(id int){
 					}
 				case <-rf.Done:
 					// call timed out
-					fmt.Println("closed", id)
+					fmt.Println(rf.me, "closed", id)
 					return
 				}
 
@@ -431,7 +445,7 @@ func (rf *Raft) CommitLog(){
 			}
 			toCommit := rf.commitIndex + 1
 
-			fmt.Println(me, "starts committing", toCommit, "in", rf.currentTerm, len(rf.log))
+			//fmt.Println(me, "starts committing", toCommit, "in", rf.currentTerm, len(rf.log))
 			if toCommit >= len(rf.log) {
 				continue
 			}
