@@ -656,6 +656,7 @@ func TestFigure82C(t *testing.T) {
 				}
 			}
 		}
+		//fmt.Println("committed one", leader)
 
 		if (rand.Int() % 1000) < 100 {
 			ms := rand.Int63() % (int64(RaftElectionTimeout/time.Millisecond) / 2)
@@ -670,14 +671,16 @@ func TestFigure82C(t *testing.T) {
 			nup -= 1
 		}
 
-		if nup < 3 {
+		for nup < 3 {
 			s := rand.Int() % servers
 			if cfg.rafts[s] == nil {
 				cfg.start1(s)
 				cfg.connect(s)
+				//fmt.Println("add server", s, iters)
 				nup += 1
 			}
 		}
+		//fmt.Println("all server", nup, iters)
 	}
 
 	for i := 0; i < servers; i++ {
@@ -687,6 +690,7 @@ func TestFigure82C(t *testing.T) {
 		}
 	}
 
+	//fmt.Println("final")
 	cfg.one(rand.Int(), servers)
 
 	fmt.Printf("  ... Passed\n")
