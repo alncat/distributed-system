@@ -165,6 +165,7 @@ func (cfg *config) start1(i int) {
 				}
 				_, prevok := cfg.logs[i][m.Index-1]
 				cfg.logs[i][m.Index] = v
+				//fmt.Printf("got reply from server %v for %v\n", i, m.Index)
 				cfg.mu.Unlock()
 
 				if m.Index > 1 && prevok == false {

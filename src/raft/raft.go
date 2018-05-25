@@ -288,15 +288,15 @@ func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply
 			}
 			rf.persist()
 			if oldIndex != rf.commitIndex {
-				fmt.Println(rf.me, "send", oldIndex+1, rf.commitIndex)
-				go func(from, to int){
-					for i := from; i <= to; i++ {
-						rf.mu.Lock()
+				//go func(from, to int){
+					fmt.Println(rf.me, "send", oldIndex+1, rf.commitIndex)
+					for i := oldIndex+1; i <= rf.commitIndex; i++ {
+						//rf.mu.Lock()
 						command := rf.log[i].Command
-						rf.mu.Unlock()
+						//rf.mu.Unlock()
 						rf.applyCh <- command
 					}
-				}(oldIndex + 1, rf.commitIndex)
+				//}(oldIndex + 1, rf.commitIndex)
 			}
 		} else {
 			fmt.Println(rf.me, "has", len(rf.log)-1, rf.log[len(rf.log)-1].Term)
@@ -502,7 +502,7 @@ func (rf *Raft) CommitLog(){
 						committed = i
 					}
 				}
-				fmt.Println(rf.me, "committed", committed)
+				//fmt.Println(rf.me, "committed", committed)
 				if committed >= toCommit {
 					break
 				}
